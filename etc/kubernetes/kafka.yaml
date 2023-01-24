@@ -13,23 +13,6 @@ spec:
   selector:
     app.kubernetes.io/component: kafka
 ---
-apiVersion: v1
-kind: Service
-metadata:
-  name: kafka-broker-0
-  namespace: kaspar
-spec:
-  type: LoadBalancer
-#  externalTrafficPolicy: Local
-  ports:
-    - name: external
-      port: 9092
-      protocol: TCP
-      targetPort: 9092
-#      nodePort: 31090
-  selector:
-    statefulset.kubernetes.io/pod-name: kafka-0
----
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
