@@ -28,11 +28,13 @@ mv ./kubectl ~/.local/bin/kubectl
 ```
 Validated on `Client Version: {Major:"1", Minor:"23", GitVersion:"v1.23.2"}` and `Server Version: {Major:"1", Minor:"23", GitVersion:"v1.23.6+k3s1"}`
 ## Install k3d
+Use the following command to install k3d or visit [k3d](https://k3d.io/) for other options.
 ```
 curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
 ```
 Validated on `k3d version v5.4.3, k3s version v1.23.6-k3s1`
 ## Install helm
+Use the following command to install helm or visit [helm](https://helm.sh/) for other options.
 ```
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 ```
