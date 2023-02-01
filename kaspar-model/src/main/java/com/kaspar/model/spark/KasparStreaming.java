@@ -3,13 +3,12 @@
  */
 package com.kaspar.model.spark;
 
-import java.io.File;
 import java.util.Arrays;
 
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.api.java.UDF1;
 import org.apache.spark.sql.types.DataTypes;
-import org.deeplearning4j.nn.multilayer.MultiLayerNetwork;
+import org.deeplearning4j.util.ModelSerializer;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.dataset.api.preprocessor.DataNormalization;
 import org.nd4j.linalg.dataset.api.preprocessor.serializer.NormalizerSerializer;
@@ -25,20 +24,23 @@ public class KasparStreaming {
 
     public static void main(String[] args) throws Exception {
         SparkSession spark = SparkSession.builder().appName("KasparStreaming").getOrCreate();
+        spark.sparkContext().setLogLevel("ERROR");
 
-        SerializableModel model = new SerializableModel(
-                MultiLayerNetwork.load(new File("src/main/resources/model/LSTMClassifier"), false));
+        // Even though MultiLayerNetwork is serializable, we use a custom Serializable
+        // wrapper to avoid serialization issues in UDF closure.
+        SerializableModel model = new SerializableModel(ModelSerializer
+                .restoreMultiLayerNetwork(KasparStreaming.class.getResourceAsStream("/model/LSTMClassifier"), false));
         DataNormalization normalizer = NormalizerSerializer.getDefault()
-                .restore(new File("src/main/resources/model/DataNormalizer"));
+                .restore(KasparStreaming.class.getResourceAsStream("/model/DataNormalizer"));
 
-        spark.udf().register("kasparModel", new UDF1<String, String>() {
+        spark.udf().register("KasparModel", new UDF1<String, String>() {
 
             private static final long serialVersionUID = 1L;
 
             @Override
             public String call(String message) throws Exception {
                 double[] timeseries = Arrays.stream(message.split(",")).mapToDouble(Double::valueOf).toArray();
-                INDArray input = Nd4j.create(timeseries);
+                INDArray input = Nd4j.create(timeseries).reshape(1, 1, timeseries.length);
                 normalizer.transform(input);
                 INDArray labelMask = Nd4j.zeros(1, 60).put(0, 59, 1);
                 INDArray output = model.get().output(input, false, null, labelMask);
@@ -50,6 +52,9 @@ public class KasparStreaming {
         spark.readStream().format("kafka").option("kafka.bootstrap.servers", args[0]).option("subscribe", args[1])
                 .load().selectExpr("CAST(key AS STRING) AS key", "KasparModel(CAST(value AS STRING)) AS value")
                 .writeStream().format("kafka").option("kafka.bootstrap.servers", args[0]).option("topic", args[2])
+                // In case of a failure or intentional shutdown, recover the previous progress
+                // and state of a previous query to continue where it left off using
+                // checkpointing
                 .option("checkpointLocation", "/tmp/kafka_checkpoint").start().awaitTermination();
     }
 }
