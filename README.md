@@ -1,8 +1,63 @@
 # kafkaesque-spark
-This project showcases how to create a real-time ML inference pipeline using Spark [Structured Streaming](https://spark.apache.org/docs/latest/structured-streaming-programming-guide.html) and [Kraft Kafka](https://developer.confluent.io/learn/kraft/) on Kubernetes.
+This project showcases how to create a real-time ML inference pipeline using Spark [Structured Streaming](https://spark.apache.org/docs/latest/structured-streaming-programming-guide.html) and [KRaft Kafka](https://developer.confluent.io/learn/kraft/) running in local mode and on Kubernetes.
 
-## Prerequisites
-Before proceeding with the setup instructions, make sure [Docker](https://docs.docker.com/install/) is available on your host machine. We will be using [k3d](https://k3d.io/), which is a light-weight wrapper to run [k3s](https://github.com/rancher/k3s) in docker and making it easy to create single-node and multi-node k3s clusters in docker.
+## Local Mode
+We can create a real-time ML inference pipeline using Spark and Kafka running in a standalone mode.
+
+### Kafka with KRaft
+Download v3.3.1 of kafka which is compatible with Scala 2.13 from [Kafka Download Page](https://kafka.apache.org/downloads). Uncompress the archive in a desired location.
+
+To configure Kafka with KRaft, navigate to directory where kafka archive was uncompressed and generate a Cluster UUID using the following command:
+```
+KAFKA_CLUSTER_ID="$(bin/kafka-storage.sh random-uuid)"
+```
+Format the log directories using the following command:
+```
+bin/kafka-storage.sh format -t $KAFKA_CLUSTER_ID -c config/kraft/server.properties
+```
+Start the Kafka server using the following command:
+```
+bin/kafka-server-start.sh config/kraft/server.properties
+```
+From another terminal/shell, create the input and output topics using the following commands:
+```
+bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic kaspar-inputs
+```
+```
+bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic kaspar-outputs
+```
+`kaspar-inputs` will contain the input messages for our ML model and `kaspar-outputs` will contain the inference results of our ML model.
+
+### Spark
+Download v3.3.1 of Spark which is pre-built for Apache Hadoop 3.3 and compatible with Scala 2.13 from [Spark Download Page](https://spark.apache.org/downloads.html). Uncompress the archive in a desired location.
+
+### Run
+Follow the instructions provided under [kaspar-model](kaspar-model/README.md) to generate the application JAR. Navigate to the directory where spark archive was uncompressed and submit the spark application JAR using the following command:
+```
+./bin/spark-submit --class com.kaspar.model.spark.KasparStreaming --master local <PATH_TO>/kafkaesque-spark/kaspar-model/target/kaspar-model-1.0.0-SNAPSHOT.jar localhost:9092 kaspar-inputs kaspar-outputs
+```
+Where 
+* `PATH_TO` refers to the path leading up to the `kafkaesque-spark` project
+* `localhost:9092` is the broker host for Kafka
+* `kaspar-inputs` is the topic from which the ML model will consume the input features
+* `kaspar-outputs` is the topic to which the ML model will produce inferences
+
+Open one terminal/shell for Kakfa Producer and one for Kafka Consumer. On the Consumer terminal, change directory to `kaspar-client/files` and run the consumer client using the following command:
+```
+./kafka-client.py consumer -s localhost:9092 -t kaspar-outputs
+```
+On the Producer terminal, change directory to `kaspar-client/files` and run the producer client using the following command. The producer will iterate over the contents of `kaspar-client/files/kaspar.csv` and produce one message per row per second.
+```
+/kafka-client.py producer -s localhost:9092 -t kaspar-inputs
+```
+#### The output on producer terminal should look like this:
+![Local Producer](docs/local_producer.png)
+
+#### The output on consumer terminal should look like this:
+![Local Consumer](docs/local_consumer.png)
+
+## Kubernetes
+Before proceeding with the installation and setup instructions, make sure [Docker](https://docs.docker.com/install/) is available on your host machine. We will be using [k3d](https://k3d.io/), which is a light-weight wrapper to run [k3s](https://github.com/rancher/k3s) in docker and making it easy to create single-node and multi-node k3s clusters in docker.
 
 ### Docker network
 To enable docker containers to communicate with each other using container names, we will use the following command to create a dedicated bridge network:
@@ -10,7 +65,7 @@ To enable docker containers to communicate with each other using container names
 docker network create kaspar-net
 ```
 
-## Installation
+### Installation
 The following steps will walk you through the installation of tools required to work with Kubernetes.
 
 ### Install kubectl
@@ -39,7 +94,7 @@ Use the following command to install helm or visit [helm](https://helm.sh/) for 
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 ```
 
-## Setup
+### Setup
 The following steps will walk you through the setup of Kafka and Spark on a k3d cluster.
 
 ### Create Cluster
