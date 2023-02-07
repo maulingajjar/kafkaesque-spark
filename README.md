@@ -34,7 +34,12 @@ Download v3.3.1 of Spark which is pre-built for Apache Hadoop 3.3 and compatible
 ### Run
 Follow the instructions provided under [kaspar-model](kaspar-model/README.md) to generate the application JAR. Navigate to the directory where spark archive was uncompressed and submit the spark application JAR using the following command:
 ```
-./bin/spark-submit --class com.kaspar.model.spark.KasparStreaming --master local <PATH_TO>/kafkaesque-spark/kaspar-model/target/kaspar-model-1.0.0-SNAPSHOT.jar localhost:9092 kaspar-inputs kaspar-outputs
+./bin/spark-submit --class com.kaspar.model.spark.KasparStreaming \
+    --master local \
+    <PATH_TO>/kafkaesque-spark/kaspar-model/target/kaspar-model-1.0.0-SNAPSHOT.jar \
+    localhost:9092 \
+    kaspar-inputs \
+    kaspar-outputs
 ```
 Where 
 * `PATH_TO` refers to the path leading up to the `kafkaesque-spark` project
@@ -188,7 +193,13 @@ Replace `spark-master-74f78f7857-7czzj` with the pod name of spark master pod on
 
 Submit the spark application JAR using the following command:
 ```
-./bin/spark-submit --master spark://$(hostname -i):7077 --conf spark.driver.host=$(hostname -i | tr '.' '-').$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace).pod.cluster.local --class com.kaspar.model.spark.KasparStreaming /tmp/kaspar-model-1.0.0-SNAPSHOT.jar 10.42.0.16:9092,10.42.2.50:9092,10.42.2.51:9092 kaspar-inputs kaspar-outputs
+./bin/spark-submit --master spark://$(hostname -i):7077 \
+    --conf spark.driver.host=$(hostname -i | tr '.' '-').$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace).pod.cluster.local \
+    --class com.kaspar.model.spark.KasparStreaming \
+    /tmp/kaspar-model-1.0.0-SNAPSHOT.jar \
+    10.42.0.16:9092,10.42.2.50:9092,10.42.2.51:9092 \
+    kaspar-inputs \
+    kaspar-outputs
 ```
 Update the Kafka broker list `10.42.0.16:9092,10.42.2.50:9092,10.42.2.51:9092` with values from your system.
 
