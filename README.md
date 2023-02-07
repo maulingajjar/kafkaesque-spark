@@ -82,12 +82,14 @@ mkdir -p ~/.local/bin
 mv ./kubectl ~/.local/bin/kubectl
 ```
 Validated on `Client Version: {Major:"1", Minor:"23", GitVersion:"v1.23.2"}` and `Server Version: {Major:"1", Minor:"23", GitVersion:"v1.23.6+k3s1"}`
+
 ### Install k3d
 Use the following command to install k3d or visit [k3d](https://k3d.io/) for other options.
 ```
 curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
 ```
 Validated on `k3d version v5.4.3, k3s version v1.23.6-k3s1`
+
 ### Install helm
 Use the following command to install helm or visit [helm](https://helm.sh/) for other options.
 ```
@@ -102,13 +104,17 @@ Use the following command to create a new three-node cluster spanning three avai
 ```
 k3d cluster create kaspar-cluster \
   --network kaspar-net \
-  --port "8080:80@loadbalancer" \
+  --port "30080:80@server:*" \
   --agents 3 \
   --k3s-node-label topology.kubernetes.io/zone=zone-a@agent:0 \
   --k3s-node-label topology.kubernetes.io/zone=zone-b@agent:1 \
   --k3s-node-label topology.kubernetes.io/zone=zone-c@agent:2 \
   --k3s-arg '--no-deploy=traefik@server:*'
 ```
+
+#### This will create a cluster with the following nodes:
+![k3d Nodes](docs/k3d_nodes.png)
+
 By default, k3d uses Traefik as the ingress controller for your cluster. Normally Traefik meets the needs of most Kubernetes clusters. However, in our case, we will enable Nginx Ingress Controller which offers a flexible way of routing traffic from beyond our cluster to internal Kubernetes Services. The Ingress Controller service runs on port `80` which is then mapped to the port `8080` of the host machine.
 
 ### Create Namespace
@@ -116,16 +122,97 @@ By default, k3d uses Traefik as the ingress controller for your cluster. Normall
 kubectl create namespace kaspar
 ```
 
-### Install Nginx Ingress Controller
-The instructions below describe the steps to install Nginx Ingress Controller. The Nginx Ingress Controller consists of a Pod and a Service. The Pod runs the Controller, which constantly polls the `/ingresses` endpoint on the API server of the cluster for updates to available Ingress Resources. The Service is of type `LoadBalancer` through which all external traffic will flow to the Controller.
+### Install Kafka KRaft
+Change directory to `kafkaesque-spark/kaspar-cluster` and deploy Kafka KRaft using the following command:
+```
+kubectl apply -f kafka.yaml
+```
+#### This StatefulSet will create three Kafka broker pods and a headless service.
+![Pod List Kafka](docs/pod_list_kafka.png)
 
-To install the Nginx Ingress Controller to your cluster, add its repository to Helm by running the following sequence of commands:
+#### There are also three independent PersistentVolumeClaims created for storing Kafka data, one for each broker.
+![Persistent Volumes](docs/persistent_volumes.png)
+
+#### Describe the Kafka service
+![Kafka Service](docs/kafka_service.png)
+
+#### Get the Kafka service endpoints
+![Kafka Service Endpoints](docs/kafka_service_endpoints.png)
+
+### Install Kafka Client
+Build the Docker image for `kaspar-client` from the instructions provided under [kaspar-client](kaspar-client/README.md). Import the Docker image into the k3d cluster using the following command:
 ```
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+k3d images import kaspar-client:latest -c kaspar-cluster
 ```
+### Install Spark Cluster
+Build the Docker image for `kaspar-spark` from the instructions provided under [kaspar-cluster](kaspar-cluster/README.md). Import the Docker image into the k3d cluster using the following command:
 ```
-helm repo update
+k3d images import kaspar-spark:latest -c kaspar-cluster
 ```
+
+Change directory to `kafkaesque-spark/kaspar-cluster` and deploy Spark using the following command:
 ```
-helm install ingress-nginx ingress-nginx/ingress-nginx --set controller.publishService.enabled=true
+kubectl apply -f spark.yaml
 ```
+
+#### This Deployment will create three Spark pods: one for master and two for workers.
+![Pod List Spark](docs/pod_list_spark.png)
+
+### Submit Application
+Create the spark application JAR by running the following command from `kafkaesque-spark/spark-cluster`:
+```
+mvn clean install
+```
+
+This will create `kaspar-model-1.0.0-SNAPSHOT.jar` file under `kafkaesque-spark/spark-cluster/target` folder. Copy this file to the spark master pod by running the following command from `kafkaesque-spark/spark-cluster`:
+```
+kubectl cp target/kaspar-model-1.0.0-SNAPSHOT.jar kaspar/spark-master-74f78f7857-7czzj:/tmp/
+```
+Replace `spark-master-74f78f7857-7czzj` with the pod name of spark master pod on your system.
+
+### Run
+Get the list of Kafka endpoints by running the following command:
+```
+kubectl get ep kafka-svc -n kaspar | tail +2 | awk '{print $2}'
+```
+The output should look something like this:
+```
+10.42.0.16:9092,10.42.2.50:9092,10.42.2.51:9092
+```
+
+SSH into the spark master pod by running the following command:
+```
+kubectl exec -it spark-master-74f78f7857-7czzj -n kaspar -- /bin/bash
+```
+Replace `spark-master-74f78f7857-7czzj` with the pod name of spark master pod on your system.
+
+Submit the spark application JAR using the following command:
+```
+./bin/spark-submit --master spark://$(hostname -i):7077 --conf spark.driver.host=$(hostname -i | tr '.' '-').$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace).pod.cluster.local --class com.kaspar.model.spark.KasparStreaming /tmp/kaspar-model-1.0.0-SNAPSHOT.jar 10.42.0.16:9092,10.42.2.50:9092,10.42.2.51:9092 kaspar-inputs kaspar-outputs
+```
+Update the Kafka broker list `10.42.0.16:9092,10.42.2.50:9092,10.42.2.51:9092` with values from your system.
+
+#### Navigate to http://localhost:8080 on your browser to access the Spark UI which will list the running application and available workers.
+![Spark UI](docs/spark_ui.png)
+
+Open one terminal/shell for Kakfa Producer and one for Kafka Consumer. On the producer terminal run the following command:
+```
+kubectl run kaspar-producer --rm -ti --image kaspar-client:latest --image-pull-policy Never -- bash
+```
+On the consumer terminal run the following command:
+```
+kubectl run kaspar-consumer --rm -ti --image kaspar-client:latest --image-pull-policy Never -- bash
+```
+From the producer terminal, start the event producer by running the following command:
+```
+./kafka-client.py producer -s 10.42.0.16:9092,10.42.2.50:9092,10.42.2.51:9092 -t kaspar-inputs
+```
+From the consumer terminal, start the event consumer by running the following command:
+```
+./kafka-client.py consumer -s 10.42.0.16:9092,10.42.2.50:9092,10.42.2.51:9092 -t kaspar-outputs
+```
+#### The output on producer terminal should look like this:
+![Cluster Producer](docs/cluster_producer.png)
+
+#### The output on consumer terminal should look like this:
+![Cluster Consumer](docs/cluster_consumer.png)

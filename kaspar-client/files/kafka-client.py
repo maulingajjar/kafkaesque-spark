@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from confluent_kafka import Producer, Consumer, OFFSET_BEGINNING
+from confluent_kafka import Producer, Consumer
 from datetime import datetime
 import time, argparse, os
 
@@ -58,9 +58,9 @@ if __name__ == '__main__':
     CLIENT_TYPE = {'producer': producer, 'consumer': consumer}
 
     parser = argparse.ArgumentParser(description='Client for Kafka')
-    parser.add_argument('type', metavar='type', help='Type of Kafka Client (producer, consumer)', choices=CLIENT_TYPE.keys())
+    parser.add_argument('mode', metavar='mode', help='Mode of Kafka Client (producer, consumer)', choices=CLIENT_TYPE.keys())
     parser.add_argument('-s', '--bootstrap-server', help='Kafka bootstrap server. For example: localhost:9092')
     parser.add_argument('-t', '--topic', help='Kafka topic')
 
     args = parser.parse_args()
-    CLIENT_TYPE[args.type](args.bootstrap_server, args.topic)
+    CLIENT_TYPE[args.mode](args.bootstrap_server, args.topic)
