@@ -109,7 +109,7 @@ Use the following command to create a new three-node cluster spanning three avai
 ```
 k3d cluster create kaspar-cluster \
   --network kaspar-net \
-  --port "30080:80@server:*" \
+  --port "8080:30080@server:*" \
   --agents 3 \
   --k3s-node-label topology.kubernetes.io/zone=zone-a@agent:0 \
   --k3s-node-label topology.kubernetes.io/zone=zone-b@agent:1 \
